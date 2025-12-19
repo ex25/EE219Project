@@ -1,0 +1,17 @@
+**.bin
+**.npy
+**__pycache__
+**.ipynb
+!*.md
+
+# Ignore generated figure and dataset directories
+fig/
+data/
+
+# Keep other markdowns tracked but explicitly ignore the repository README
+# (place after the `!*.md` rule so this takes precedence)
+README.md
+
+# Ignore build directories everywhere
+build/
+**/build/
