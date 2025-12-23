@@ -6,9 +6,9 @@ export AM_HOME=$(TOP_PATH)/sw/libraries/abstract-machine
 # Instruction
 CFILE=hello-str
 # Data-Format
-INPUT_NHWC=false
-CONV_WEIGHT_NHWC=false
-FC_WEIGHT_TRANS=false
+INPUT_NHWC=true
+CONV_WEIGHT_NHWC=true
+FC_WEIGHT_TRANS=true
 # Data-Image
 DATA=data
 # Save-File-Name
