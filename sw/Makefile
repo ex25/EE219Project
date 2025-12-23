@@ -2,7 +2,7 @@
 
 ARCH=riscv64-mycpu
 ALL=$(basename $(notdir $(shell find src/. -name "*.c")))
-MAKEFILE_TEMPLATE="NAME = $*\nSRCS = $<\nLIBS += klib\ninclude $${AM_HOME}/Makefile"
+MAKEFILE_TEMPLATE="NAME = $*\nSRCS = $< src/scale_op.c\nLIBS += klib\ninclude $${AM_HOME}/Makefile"
 # !!! if you want to ignore some warning, you can use the next macro !!!
 # MAKEFILE_TEMPLATE="NAME = $*\nSRCS = $<\nLIBS += klib\nCFLAGS += -Wno-unused-variable\ninclude $${AM_HOME}/Makefile"
 
