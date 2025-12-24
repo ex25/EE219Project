@@ -42,22 +42,6 @@ static int32_t fc2_out[10];
 // Softmax Output: 10
 static int32_t softmax_out[10];
 
-// 将 NCHW (Planar) 转为 NHWC (Interleaved)
-// Conv输出是NCHW，但你的MaxPool实现需要NHWC，所以需要转换
-void transpose_NCHW_to_NHWC(const int16_t *src, int16_t *dst, int C, int H, int W) {
-    for (int c = 0; c < C; c++) {
-        for (int h = 0; h < H; h++) {
-            for (int w = 0; w < W; w++) {
-                // src index (NCHW): c * (H*W) + h * W + w
-                // dst index (NHWC): h * (W*C) + w * C + c
-                int src_idx = c * (H * W) + h * W + w;
-                int dst_idx = (h * W + w) * C + c;
-                dst[dst_idx] = src[src_idx];
-            }
-        }
-    }
-}
-
 // ==========================================
 // 4. Main Inference Function
 // ==========================================
@@ -85,14 +69,14 @@ int main() {
     int16_t *conv_scale_ptr = (int16_t*)ADDR_SCONV1;
     int32_t conv_scale = (int32_t)(*conv_scale_ptr);
 
-    int M = Cout;              // 4
-    int N_patches = H_out * W_out; // 144
+    int M = H_out * W_out;  // 144
+    int N_patches = Cout;   // 4
     int K_dim = K * K * Cin;   // 54
 
-    matmul_int8_scale_clip_nhwc(
-        (int8_t*)ADDR_WCONV1, // Matrix A
-        col_buf,              // Matrix B
-        conv_out_nhwc,        // Matrix C (Output NHWC)
+    matmul_int8_scale_clip(
+        col_buf,              
+        (int8_t*)ADDR_WCONV1, 
+        conv_out_nhwc,        
         M, N_patches, K_dim, 
         conv_scale
     );

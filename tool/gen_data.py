@@ -202,7 +202,8 @@ def main():
 
     ker = kernel
     if args.conv_weight_nhwc:
-        ker = ker.transpose(0, 2, 3, 1)
+        # ker = ker.transpose(0, 2, 3, 1)
+        ker = ker.transpose(2, 3, 1, 0)
 
     write_at(mem, ADDR_WCONV1, ker.tobytes())
     print(f"[WRITE] conv1 weight -> 0x{ADDR_WCONV1:X}")

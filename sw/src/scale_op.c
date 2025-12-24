@@ -13,55 +13,50 @@ void im2col_weight_int8(const int8_t *weight, int8_t *col_buf,
 
 void im2col_input_int8(const int8_t *img, int8_t *col_buf, 
                        int C, int H, int W, int K) {
-    int S = 1; // Stride
-    int P = 0; // Padding
+    int S = 1; 
+    int P = 0; 
     
     int H_out = (H + 2 * P - K) / S + 1;
     int W_out = (W + 2 * P - K) / S + 1;
     
-    int n_patches = H_out * W_out;      // 矩阵 B 的列数 (N)
+    // 一个 Patch 展开后的总大小 (矩阵的列宽)
+    int kernel_dim = K * K * C;
     
-    // 我们生成矩阵 B [K_dim, N_patches]
-    // 遍历顺序：为了优化缓存，通常遍历输出 Patch
-    
+    // 当前 Patch 的索引 (矩阵的行号)
+    int patch_idx = 0;
+
+    // 1. 遍历每一个滑动窗口 (Output Patch)
     for (int h_out = 0; h_out < H_out; ++h_out) {
         for (int w_out = 0; w_out < W_out; ++w_out) {
             
-            // 当前 Patch 在矩阵 B 中的列索引
-            int patch_col = h_out * W_out + w_out;
+            // 计算 col_buf 中这一行的起始指针
+            // Row-Major: buf + row_index * row_width
+            int8_t* patch_ptr = col_buf + patch_idx * kernel_dim;
             
-            // 原图中的起始坐标
             int h_in_start = h_out * S - P;
             int w_in_start = w_out * S - P;
             
-            int matrix_row = 0; // 矩阵 B 的行索引 0 ~ K_dim-1
-
-            // 卷积核循环 (K -> K -> C)
+            // 2. 遍历卷积核 (收集这个 Patch 的数据)
             for (int kh = 0; kh < K; ++kh) {
                 for (int kw = 0; kw < K; ++kw) {
                     int h_in = h_in_start + kh;
                     int w_in = w_in_start + kw;
-                    
-                    // 边界检查 (处理 Padding)
+                    // 边界检查
                     if (h_in >= 0 && h_in < H && w_in >= 0 && w_in < W) {
-                        // NHWC 寻址优化：C 是连续的
+                        // 1. 计算源地址
                         int pixel_offset = (h_in * W + w_in) * C;
-                        
-                        for (int c = 0; c < C; ++c) {
-                            int8_t val = img[pixel_offset + c];
-                            // B[matrix_row][patch_col] -> Row Major Storage
-                            col_buf[matrix_row * n_patches + patch_col] = val;
-                            matrix_row++;
-                        }
+                        const int8_t* src = img + pixel_offset;
+                        memcpy(patch_ptr, src, C * sizeof(int8_t));
                     } else {
-                        // Padding 区域填 0
-                        for (int c = 0; c < C; ++c) {
-                            col_buf[matrix_row * n_patches + patch_col] = 0;
-                            matrix_row++;
-                        }
+                        // Padding 填 0
+                        memset(patch_ptr, 0, C * sizeof(int8_t));
                     }
+                    // 指针前移，准备填下一个像素的 C 个通道
+                    patch_ptr += C; 
                 }
             }
+            // 处理完一个 Patch，行号 +1
+            patch_idx++;
         }
     }
 }
@@ -88,31 +83,6 @@ void matmul_int8_scale_clip(const int8_t *A, const int8_t *B, int16_t *C,
             
             // 4. Cast & Store
             C[m * N + n] = (int16_t)val;
-        }
-    }
-}
-
-// Int8 * Int8 -> Int32 -> Scale -> Clip -> Int16 (Output NHWC)
-void matmul_int8_scale_clip_nhwc(const int8_t *A, const int8_t *B, int16_t *C, 
-                            int M, int N, int K, int scale) {
-    // Output C is [N, M] (NHWC: Pixels x Channels)
-    // A is [M, K]
-    // B is [K, N]
-    for (int n = 0; n < N; ++n) {
-        for (int m = 0; m < M; ++m) {
-            
-            int32_t sum = 0;
-            for (int k = 0; k < K; ++k) {
-                sum += (int32_t)A[m * K + k] * (int32_t)B[k * N + n];
-            }
-            
-            if (scale != 0) {
-                sum = sum / scale;
-            }
-
-            int32_t val = CLAMP(sum, 0, 32767);
-            
-            C[n * M + m] = (int16_t)val;
         }
     }
 }

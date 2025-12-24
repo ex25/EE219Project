@@ -44,7 +44,6 @@ void im2col_input_int8(const int8_t *img, int8_t *col_buf,
  * C 维度: [M, N]
  */
 void matmul_int8_scale_clip(const int8_t *A, const int8_t *B, int16_t *C, int M, int N, int K, int scale);
-void matmul_int8_scale_clip_nhwc(const int8_t *A, const int8_t *B, int16_t *C, int M, int N, int K, int scale);
 void matmul_int16_scale_clip(const int16_t *A, const int16_t *B, int32_t *C, int M, int N, int K, int scale);
 void matmul_int32_scale_clip(const int32_t *A, const int32_t *B, int32_t *C, int M, int N, int K, int scale);
 
