@@ -1,6 +1,6 @@
 #include <am.h>
 #include <klib.h>
-#include "scale_op.h"
+#include "vec_op.h"
 
 // ==========================================
 // 1. 地址定义 (必须与 gen_data.py 和 仿真器加载地址一致)
@@ -44,11 +44,11 @@ static int32_t fc2_out[10] __attribute__((aligned(8)));
 static int32_t softmax_out[10] __attribute__((aligned(8)));
 
 // ==========================================
-// 4. Main Inference Function
+// 4. Main Inference Function (Vector Version)
 // ==========================================
 
 int main() {
-    printf("\n=== RISC-V Neural Network Inference Start ===\n");
+    printf("\n=== RISC-V Neural Network Inference (VECTOR VERSION) ===\n");
     // ------------------------------------------
     // Layer 1: Conv2D + Scale + Clip
     // ------------------------------------------
@@ -57,13 +57,12 @@ int main() {
     int K = 3, Cout = 4;
     int H_out = 12, W_out = 12; // (14-3+1)
     
-    printf("1. Executing Conv2D...\n");
+    printf("1. Executing Conv2D (Vector)...\n");
     
-    // 1.1 Im2Col (Input -> Col Buffer)
-    // Input is NHWC in memory (from gen_data.py)
-    im2col_input_int8((int8_t*)ADDR_INPUT, col_buf, Cin, Hin, Win, K);
+    // 1.1 Im2Col (Input -> Col Buffer) - VECTOR VERSION
+    im2col_input_int8_vec((int8_t*)ADDR_INPUT, col_buf, Cin, Hin, Win, K);
 
-    // 1.2 MatMul (Weights x ColBuffer)
+    // 1.2 MatMul (Weights x ColBuffer) - VECTOR VERSION
     // Weight: [Cout, K*K*Cin] = [4, 54]
     // ColBuf: [K*K*Cin, H_out*W_out] = [54, 144]
     // Output: [4, 144] (NCHW format)
@@ -74,7 +73,7 @@ int main() {
     int N_patches = Cout;   // 4
     int K_dim = K * K * Cin;   // 54
 
-    matmul_int8_scale_clip(
+    matmul_int8_scale_clip_vec(
         col_buf,              
         (int8_t*)ADDR_WCONV1, 
         conv_out_nhwc,        
@@ -86,21 +85,15 @@ int main() {
     // Layer 2: MaxPool 2x2
     // ------------------------------------------
     // Input: [12, 12, 4] (NHWC) -> Output: [6, 6, 4]
-    printf("2. Executing MaxPool...\n");
-    maxpool_int16(conv_out_nhwc, pool_out, Cout, H_out, W_out);
+    printf("2. Executing MaxPool (Vector)...\n");
+    maxpool_int16_vec(conv_out_nhwc, pool_out, Cout, H_out, W_out);
 
     // ------------------------------------------
-    // Layer 3: Flatten
+    // Layer 3: Flatten & Transpose
     // ------------------------------------------
-    // Logical operation only. 
-    // pool_out is now a linear array of 6*6*4 = 144 elements.
-    // BUT gen_data.py expects NCHW flattened, while pool_out is NHWC.
-    // So we must transpose pool_out (NHWC) -> NCHW before FC1.
-    
-    // Reuse conv_out_nchw buffer for transposed pool output
     // pool_out: [6, 6, 4] (NHWC)
     // conv_out_nchw: [4, 6, 6] (NCHW) - buffer is large enough (4*12*12)
-    transpose_NHWC_to_NCHW(pool_out, conv_out_nhwc, Cout, 6, 6);
+    transpose_NHWC_to_NCHW_vec(pool_out, conv_out_nhwc, Cout, 6, 6);
 
     // ------------------------------------------
     // Layer 4: Fully Connected 1
@@ -108,13 +101,13 @@ int main() {
     // Input: 144. Output: 60.
     // Weight shape in memory: [144, 60] (Transposed by gen_data)
     // Calculation: Input_Row(1, 144) x Weight(144, 60) = Output(1, 60)
-    printf("3. Executing FC1...\n");
+    printf("3. Executing FC1 (Vector)...\n");
 
     int32_t *fc1_scale_ptr = (int32_t*)ADDR_SFC1;
     int fc1_in_features = 144;
     int fc1_out_features = 60;
 
-    matmul_int16_scale_clip(
+    matmul_int16_scale_clip_vec(
         conv_out_nhwc,       // Matrix A (Input Vector treated as 1xK) - NOW NCHW
         (int16_t*)ADDR_WFC1, // Matrix B (Weights)
         fc1_out,             // Matrix C
@@ -124,21 +117,21 @@ int main() {
         *fc1_scale_ptr
     );
 
-    // 4.1 ReLU
-    relu_int32(fc1_out, fc1_out_features);
+    // 4.1 ReLU - VECTOR VERSION
+    relu_int32_vec(fc1_out, fc1_out_features);
 
     // ------------------------------------------
     // Layer 5: Fully Connected 2
     // ------------------------------------------
     // Input: 60. Output: 10.
     // Weight shape: [60, 10] (Transposed)
-    printf("4. Executing FC2...\n");
+    printf("4. Executing FC2 (Vector)...\n");
     
     int fc2_in_features = 60;
     int fc2_out_features = 10;
 
-    // MatMul (Scale = 0 means no division)
-    matmul_int32_scale_clip(
+    // MatMul (Scale = 0 means no division) - VECTOR VERSION
+    matmul_int32_scale_clip_vec(
         fc1_out,             // Input
         (int32_t*)ADDR_WFC2, // Weight
         fc2_out,             // Output
@@ -148,10 +141,10 @@ int main() {
         0
     );
 
-    // Bias Add
-    matadd_int32(fc2_out, (int32_t*)ADDR_BFC2, fc2_out, fc2_out_features);
+    // Bias Add - VECTOR VERSION
+    matadd_int32_vec(fc2_out, (int32_t*)ADDR_BFC2, fc2_out, fc2_out_features);
 
-    printf("\n=== FC2 Output (pre-Softmax) ===\n");
+    printf("\n=== FC2 Output (pre-Softmax) - VECTOR ===\n");
     for (int i = 0; i < fc2_out_features; i++) {
         printf("FC2[%d]: %d\n", i, fc2_out[i]);
     }
@@ -159,19 +152,30 @@ int main() {
     // ------------------------------------------
     // Layer 6: Softmax
     // ------------------------------------------
-    printf("5. Executing Softmax...\n");
-    softmax_hw(fc2_out, softmax_out, (int32_t*)ADDR_SOFTMAX_LUT, fc2_out_features);
+    printf("5. Executing Softmax (Vector)...\n");
+    softmax_hw_vec(fc2_out, softmax_out, (int32_t*)ADDR_SOFTMAX_LUT, fc2_out_features);
 
     // ------------------------------------------
     // 结果打印
     // ------------------------------------------
-    printf("\n=== Inference Result ===\n");
+    printf("\n=== Softmax Result - VECTOR ===\n");
     for (int i = 0; i < 10; i++) {
-        // 使用 printf 需要 AM 实现了它，否则用 klib 的 printf
-        // 如果没有 printf，可以手写 putstr 打印数字，这里假设 klib 可用
         printf("Class %d: %d\n", i, softmax_out[i]);
     }
-    printf("========================\n");
+    
+    // 找出预测类别
+    int max_idx = 0;
+    int32_t max_val = softmax_out[0];
+    for (int i = 1; i < 10; i++) {
+        if (softmax_out[i] > max_val) {
+            max_val = softmax_out[i];
+            max_idx = i;
+        }
+    }
+    
+    printf("\n=== Prediction ===\n");
+    printf("Predicted Class: %d (Confidence: %d)\n", max_idx, max_val);
+    printf("==================\n");
 
     return 0;
 }

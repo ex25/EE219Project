@@ -87,4 +87,13 @@ void flatten_int16(const int16_t *src, int16_t *dst, int len);
  */
 void softmax_hw(const int32_t *src, int32_t *dst, const int32_t *lut, int len);
 
+/**
+ * @brief 矩阵转置 (int8)
+ * @param src 源矩阵 [M, N]
+ * @param dst 目标矩阵 [N, M]
+ * @param M 源矩阵行数
+ * @param N 源矩阵列数
+ */
+void transpose_int8(const int8_t *src, int8_t *dst, int M, int N);
+
 #endif // NN_OPS_H

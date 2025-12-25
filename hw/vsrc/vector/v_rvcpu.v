@@ -42,10 +42,13 @@ module v_rvcpu(
     wire                    vmem_wen;
     wire [`VMEM_ADDR_BUS]   vmem_addr;
     wire [`VMEM_DATA_BUS]   vmem_din;
+    wire [2:0]              vmem_width;
+    wire [2:0]              vmem_len;
+    wire                    vmem_is_vlx;
+    wire                    vmem_is_vsx;
 
     wire                    vid_wb_en;
     wire                    vid_wb_sel;    // 1: mem -> vreg, 0: alu -> vreg
-    wire                    vid_wb_split;  
     wire [`VREG_ADDR_BUS]   vid_wb_addr;
 
     v_inst_decode u_decode (
@@ -76,11 +79,14 @@ module v_rvcpu(
         .vmem_wen_o     (vmem_wen),
         .vmem_addr_o    (vmem_addr),
         .vmem_din_o     (vmem_din),
+        .vmem_width_o   (vmem_width),
+        .vmem_len_o     (vmem_len),
+        .vmem_is_vlx_o  (vmem_is_vlx),
+        .vmem_is_vsx_o  (vmem_is_vsx),
 
         // 送 writeback 的写回控制
         .vid_wb_en_o    (vid_wb_en),
         .vid_wb_sel_o   (vid_wb_sel),
-        .vid_wb_split_o (vid_wb_split),
         .vid_wb_addr_o  (vid_wb_addr)
     );
 
@@ -116,10 +122,16 @@ module v_rvcpu(
     wire [`VRAM_DATA_BUS] vram_din_int;
 
     v_mem u_mem (
+        .clk             (clk),
+        .rst             (rst),
         .vmem_ren_i      (vmem_ren),
         .vmem_wen_i      (vmem_wen),
         .vmem_addr_i     (vmem_addr),
         .vmem_din_i      (vmem_din),
+        .vmem_width_i    (vmem_width),
+        .vmem_len_i      (vmem_len),
+        .vmem_is_vlx_i   (vmem_is_vlx),
+        .vmem_is_vsx_i   (vmem_is_vsx),
         .vmem_dout_o     (vmem_dout),
 
         .vram_ren_o      (vram_ren_int),
@@ -148,7 +160,6 @@ module v_rvcpu(
     v_write_back u_wb (
         .vid_wb_en_i     (vid_wb_en),
         .vid_wb_sel_i    (vid_wb_sel),
-        .vid_wb_split_i  (vid_wb_split),
         .vid_wb_addr_i   (vid_wb_addr),
         .valu_result_i   (valu_result),
         .vmem_result_i   (vmem_dout),

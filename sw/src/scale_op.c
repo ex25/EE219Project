@@ -276,3 +276,11 @@ void softmax_hw(const int32_t *src, int32_t *dst, const int32_t *lut, int len) {
         dst[i] = (int32_t)(num / exp_sum_shr);
     }
 }
+
+void transpose_int8(const int8_t *src, int8_t *dst, int M, int N) {
+    for (int m = 0; m < M; ++m) {
+        for (int n = 0; n < N; ++n) {
+            dst[n * M + m] = src[m * N + n];
+        }
+    }
+}
