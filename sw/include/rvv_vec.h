@@ -86,16 +86,28 @@
 // ============================
 #define OPCODE_VL   0x07u
 #define OPCODE_VS   0x27u
-#define OPCODE_VV   0x57u
+#define OPCODE_VEC  0x57u
+#define OPCODE_VLX  0x0Bu
+#define OPCODE_VSX  0x2Bu
 
 #define FUNCT3_IVV  0x0u
-#define WIDTH_VLE32 0x6u
-#define WIDTH_VSE32 0x6u
+#define FUNCT3_IVI  0x3u
+#define FUNCT3_IVX  0x4u
+#define WIDTH_VLE64 0x7u
+#define WIDTH_VSE64 0x7u
 
-#define FUNCT6_VADD 0x00u
-#define FUNCT6_VMUL 0x24u
-#define FUNCT6_VLE32 0x00u
-#define FUNCT6_VSE32 0x00u
+#define FUNCT6_VADD       0x00u
+#define FUNCT6_VSUB       0x02u
+#define FUNCT6_VMUL       0x25u
+#define FUNCT6_VDIV       0x21u
+#define FUNCT6_VMV_V_X    0x17u
+#define FUNCT6_VMIN       0x05u
+#define FUNCT6_VMAX       0x07u
+#define FUNCT6_VSRA       0x29u
+#define FUNCT6_VREDSUM_VS 0x00u
+#define FUNCT6_VREDMAX_VS 0x07u
+#define FUNCT6_VLE64      0x00u
+#define FUNCT6_VSE64      0x00u
 
 #define VM_BIT      1u
 
@@ -130,26 +142,146 @@
 // 你要的 API：vle32(vd, xrs1) / vse32(vs3, xrs1) / vadd_vv(vd, vs1, vs2) / vmul_vv(...)
 // ============================
 
-// vle32: vd 字段=目标向量寄存器编号；rs1 字段=地址所在标量寄存器编号
+// vle64: vd 字段=目标向量寄存器编号；rs1 字段=地址所在标量寄存器编号
 #define vle32(vd, xrs1) do { \
-  const uint32_t __inst = ENCODE_RVV(FUNCT6_VLE32, VM_BIT, 0, XID(xrs1), WIDTH_VLE32, VID(vd), OPCODE_VL); \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VLE64, VM_BIT, 0, XID(xrs1), WIDTH_VLE64, VID(vd), OPCODE_VL); \
   EMIT_WORD(__inst); \
 } while (0)
 
-// vse32: 你当前 decode 用 “vd 字段当作 store 数据源寄存器编号”
-// 所以这里第一个参数写“要存的向量寄存器”
+// vse64: 你当前 decode 用 "vd 字段当作 store 数据源寄存器编号"
+// 所以这里第一个参数写"要存的向量寄存器"
 #define vse32(vs3, xrs1) do { \
-  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSE32, VM_BIT, 0, XID(xrs1), WIDTH_VSE32, VID(vs3), OPCODE_VS); \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSE64, VM_BIT, 0, XID(xrs1), WIDTH_VSE64, VID(vs3), OPCODE_VS); \
   EMIT_WORD(__inst); \
 } while (0)
 
-#define vadd_vv(vd, vs1, vs2) do { \
-  const uint32_t __inst = ENCODE_RVV(FUNCT6_VADD, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VV); \
+// Vector-Vector Operations
+#define vadd_vv(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VADD, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VEC); \
   EMIT_WORD(__inst); \
 } while (0)
 
-#define vmul_vv(vd, vs1, vs2) do { \
-  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMUL, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VV); \
+#define vsub_vv(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSUB, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmul_vv(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMUL, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmin_vv(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMIN, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmax_vv(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMAX, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vsra_vv(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSRA, VM_BIT, VID(vs2), VID(vs1), FUNCT3_IVV, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+// Vector-Scalar Operations
+#define vadd_vx(vd, vs2, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VADD, VM_BIT, VID(vs2), XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vsub_vx(vd, vs2, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSUB, VM_BIT, VID(vs2), XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmul_vx(vd, vs2, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMUL, VM_BIT, VID(vs2), XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmin_vx(vd, vs2, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMIN, VM_BIT, VID(vs2), XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmax_vx(vd, vs2, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMAX, VM_BIT, VID(vs2), XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vsra_vx(vd, vs2, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSRA, VM_BIT, VID(vs2), XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vmv_v_x(vd, xrs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VMV_V_X, VM_BIT, 0, XID(xrs1), FUNCT3_IVX, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+// Vector-Immediate Operations
+#define vadd_vi(vd, vs2, imm5) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VADD, VM_BIT, VID(vs2), (imm5) & 0x1f, FUNCT3_IVI, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vsra_vi(vd, vs2, imm5) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VSRA, VM_BIT, VID(vs2), (imm5) & 0x1f, FUNCT3_IVI, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+// Reduction Operations (funct3=010 for reductions)
+#define vredsum_vs(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VREDSUM_VS, VM_BIT, VID(vs2), VID(vs1), 0x2, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+#define vredmax_vs(vd, vs2, vs1) do { \
+  const uint32_t __inst = ENCODE_RVV(FUNCT6_VREDMAX_VS, VM_BIT, VID(vs2), VID(vs1), 0x2, VID(vd), OPCODE_VEC); \
+  EMIT_WORD(__inst); \
+} while (0)
+
+// ============================
+// VLX/VSX 自定义指令
+// ============================
+// VLX: 向量加载扩展
+// 指令格式: [31:29]=Len, [28:21]=Offset[7:0], [20]=Sign, [19:15]=rs1, [14:12]=Width, [11:7]=vd, [6:0]=0x0B
+// num: 元素数量 1-8
+// width: 000=8bit, 001=16bit, 010=32bit, 011=64bit
+// offset: 8位有符号偏移 (-128~127)
+// is_signed: 0=零扩展(无符号), 1=符号扩展(有符号)
+// 注意：offset现在是8位，sign独占bit20
+#define vlx(vd, xrs1, offset, width, num, is_signed) do { \
+  uint32_t __num = ((num) > 0 && (num) <= 8) ? ((num) - 1) : 0; \
+  uint32_t __off = (offset) & 0xffu; /* offset[7:0] */ \
+  uint32_t __sign = (is_signed) & 0x1u; /* sign bit */ \
+  uint32_t __inst = ((__num & 0x7u) << 29) | \
+                    ((__off & 0xffu) << 21) | \
+                    ((__sign & 0x1u) << 20) | \
+                    ((XID(xrs1) & 0x1fu) << 15) | \
+                    (((width) & 0x7u) << 12) | \
+                    ((VID(vd) & 0x1fu) << 7) | \
+                    OPCODE_VLX; \
+  EMIT_WORD(__inst); \
+} while (0)
+
+// VSX: 向量存储截断
+// 指令格式: [31:29]=Len, [28:21]=Offset[7:0], [24:20]=vs3, [19:15]=rs1, [14:12]=Width, [11:7]=unused, [6:0]=0x2B
+// num: 元素数量 1-8
+// width: 000=8bit, 001=16bit, 010=32bit, 011=64bit
+// offset: 8位有符号偏移 (-128~127)
+#define vsx(vs3, xrs1, offset, width, num) do { \
+  uint32_t __num = ((num) > 0 && (num) <= 8) ? ((num) - 1) : 0; \
+  uint32_t __off = (offset) & 0xffu; /* offset[7:0] */ \
+  uint32_t __inst = ((__num & 0x7u) << 29) | \
+                    ((__off & 0xffu) << 21) | \
+                    ((VID(vs3) & 0x1fu) << 20) | \
+                    ((XID(xrs1) & 0x1fu) << 15) | \
+                    (((width) & 0x7u) << 12) | \
+                    OPCODE_VSX; \
   EMIT_WORD(__inst); \
 } while (0)
 

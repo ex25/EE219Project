@@ -1,65 +1,88 @@
 #include "trap.h"
 #include "model.h"
 #include "rvv_vec.h"
+#include "vec_op.h"
+#include "scale_op.h"
+#include <am.h>
+#include <klib.h>
 #include <stdint.h>
 
-#define ADDR_VA   (ADDR_DATA + 0x000)  // A 向量 16*32bit
-#define ADDR_VB   (ADDR_DATA + 0x100)  // B 向量 16*32bit
-#define ADDR_VC   (ADDR_DATA + 0x200)  // 检查区（存回内存后用标量读验证）
+// Base address for bare-metal test buffers
+#define ADDR_BASE_U 0x80800000U
+#define A_OFF  0x00000U   // Matrix A region (int8)
+#define B_OFF  0x10000U   // Matrix B region (int8)
+#define C_REF_OFF 0x20000U // Reference output (int16)
+#define C_VEC_OFF 0x30000U // Vector output (int16)
+
+// Run one matmul test: A(MxK) * B(KxN) -> C(MxN)
+static int run_matmul_case(int M, int N, int K, int scale) {
+    int8_t *A = (int8_t *)(uintptr_t)(ADDR_BASE_U + A_OFF);
+    int8_t *B = (int8_t *)(uintptr_t)(ADDR_BASE_U + B_OFF);
+    int16_t *C_ref = (int16_t *)(uintptr_t)(ADDR_BASE_U + C_REF_OFF);
+    int16_t *C_vec = (int16_t *)(uintptr_t)(ADDR_BASE_U + C_VEC_OFF);
+
+    int a_size = M * K;
+    int b_size = K * N;
+    int c_size = M * N;
+
+    // initialize A and B with deterministic pattern
+    for (int i = 0; i < a_size; ++i) A[i] = (int8_t)((i * 37 + 3) & 0xFF);
+    for (int i = 0; i < b_size; ++i) B[i] = (int8_t)(((i * 17) - 5) & 0xFF);
+
+    // initialize outputs with sentinels
+    for (int i = 0; i < c_size; ++i) C_ref[i] = (int16_t)0x1234;
+    for (int i = 0; i < c_size; ++i) C_vec[i] = (int16_t)0x4321;
+
+    // Call reference scalar implementation
+    matmul_int8_scale_clip(A, B, C_ref, M, N, K, scale);
+
+    // Call vector implementation
+    matmul_int8_scale_clip_vec(A, B, C_vec, M, N, K, scale);
+
+    // Compare
+    for (int i = 0; i < c_size; ++i) {
+        if (C_ref[i] != C_vec[i]) {
+            printf("[FAIL] matmul mismatch M=%d N=%d K=%d idx=%d ref=%d vec=%d\n", M, N, K, i, C_ref[i], C_vec[i]);
+            return 1;
+        }
+    }
+    printf("[PASS] matmul M=%d N=%d K=%d\n", M, N, K);
+    return 0;
+}
 
 int main() {
-  volatile uint32_t *pa = (volatile uint32_t *)(uintptr_t)ADDR_VA;
-  volatile uint32_t *pb = (volatile uint32_t *)(uintptr_t)ADDR_VB;
-  volatile uint32_t *pc = (volatile uint32_t *)(uintptr_t)ADDR_VC;
+    int failures = 0;
 
-  // 1) 初始化 A/B，并清空 C
-  for (int i = 0; i < 16; i++) {
-    pa[i] = (uint32_t)(0x10u + (uint32_t)i);
-    pb[i] = (uint32_t)(0x20u + (uint32_t)i);
-    pc[i] = 0;
-  }
+    // Deterministic matmul test cases (cover small/medium/edges)
+    struct { int M,N,K,scale; } cases[] = {
+        {1, 1, 1, 1},
+        {1, 4, 3, 1},
+        {4, 4, 3, 1},
+        {5, 3, 7, 2},
+        {8, 8, 8, 4},
+        {9, 7, 5, 3},
+        {12, 6, 9, 5},
+        {3, 10, 2, 2},
+        {16, 16, 16, 8},
+        {15, 15, 15, 1},
+    };
 
-  // 2) vle：v1 <- A, v2 <- B（地址放在 x31）
-  SET_X(x31, (uintptr_t)ADDR_VA);
-  vle32(v1, x31);
-
-  SET_X(x31, (uintptr_t)ADDR_VB);
-  vle32(v2, x31);
-
-  // 3) vadd：v3 = v1 + v2；vse 写回到 C
-  vadd_vv(v3, v1, v2);
-  SET_X(x31, (uintptr_t)ADDR_VC);
-  vse32(v3, x31);
-
-  // 4) 标量验证 add
-  int ok_add = 1;
-  for (int i = 0; i < 16; i++) {
-    uint32_t expect = (uint32_t)(pa[i] + pb[i]);
-    uint32_t got    = pc[i];
-    if (got != expect) {
-      ok_add = 0;
-      printf("ADD mismatch[%d]: expect=0x%x got=0x%x\n", i, expect, got);
+    for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+        failures += run_matmul_case(cases[i].M, cases[i].N, cases[i].K, cases[i].scale);
     }
-  }
-  check(ok_add);
 
-  // 5) vmul：v4 = v1 * v2；vse 写回到 C
-  vmul_vv(v4, v1, v2);
-  SET_X(x31, (uintptr_t)ADDR_VC);
-  vse32(v4, x31);
-
-  // 6) 标量验证 mul（32-bit wrap）
-  int ok_mul = 1;
-  for (int i = 0; i < 16; i++) {
-    uint32_t expect = (uint32_t)(pa[i] * pb[i]);
-    uint32_t got    = pc[i];
-    if (got != expect) {
-      ok_mul = 0;
-      printf("MUL mismatch[%d]: expect=0x%x got=0x%x\n", i, expect, got);
+    // Randomized deterministic tests
+    srand(20231225);
+    for (int t = 0; t < 30; ++t) {
+        int M = 1 + (rand() % 16);
+        int N = 1 + (rand() % 16);
+        int K = 1 + (rand() % 16);
+        int scale = (rand() % 5);
+        failures += run_matmul_case(M, N, K, scale);
     }
-  }
-  check(ok_mul);
 
-  printf("PASS\n");
-  return 0;
+    if (failures == 0) printf("All matmul_int8_scale_clip_vec tests passed.\n");
+    else printf("%d matmul_int8_scale_clip_vec test(s) failed.\n", failures);
+
+    return failures;
 }
